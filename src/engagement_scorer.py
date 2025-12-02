@@ -117,13 +117,10 @@ class EngagementScorer:
             
         self.score_history.append(smoothed_score)
 
-        # --- 5. Status Text ---
-        if smoothed_score > 0.75:
-            status = "Highly Engaged"
-        elif smoothed_score > 0.5:
+        # --- 5. Strict Binary Status ---
+        # STRICT THRESHOLD: 0.5
+        if smoothed_score >= 0.5:
             status = "Engaged"
-        elif smoothed_score > 0.25:
-            status = "Distracted"
         else:
             status = "Not Engaged"
 

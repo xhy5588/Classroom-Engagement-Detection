@@ -54,10 +54,11 @@ def main():
                     
                     # --- UI Display ---
                     
-                    # Status Bar
-                    color = (0, 255, 0) # Green
-                    if status == "Neutral": color = (0, 255, 255) # Yellow
-                    if status == "Distracted": color = (0, 0, 255) # Red
+                    # Determine Color based on Strict Binary Status
+                    if status == "Engaged":
+                        color = (0, 255, 0)   # Green
+                    else:
+                        color = (0, 0, 255)   # Red ("Not Engaged")
                     
                     cv2.rectangle(image, (0, 0), (640, 50), (0, 0, 0), -1)
                     cv2.putText(image, f"Status: {status} ({score:.2f})", (10, 35),

@@ -71,56 +71,58 @@ class EngagementScorer:
                 raw_score = prob[1]  # Probability of class 1 (Engaged)
             except Exception as e:
                 print(f"Prediction Error: {e}")
-                raw_score = 0.5 # Fallback
-
-        if len(self.pitch_history) >= 10:
-            pitch_var = np.var(self.pitch_history)
-            if pitch_var > 15: # High variance = movement
-                raw_score = max(raw_score, 0.85) # Force High Score
-                behaviors.append("Nodding")
-
-        # --- 2. Heuristic Fallback (Secondary Method) ---
+                raw_score = 0.0 # Fallback
         else:
-            # Simple rule-based scoring if model is missing
-            raw_score = 0.8 # Start high
+            print("Error: No model loaded. Cannot calculate score.")
+            return 0.0, "Model Error", []
+        # if len(self.pitch_history) >= 10:
+        #     pitch_var = np.var(self.pitch_history)
+        #     if pitch_var > 15: # High variance = movement
+        #         raw_score = max(raw_score, 0.85) # Force High Score
+        #         behaviors.append("Nodding")
 
-            # Penalize for looking away
-            if abs(features.get('yaw', 0)) > 30:
-                raw_score += self.heuristic_weights['looking_away']
-                behaviors.append("Looking Away")
+        # # --- 2. Heuristic Fallback (Secondary Method) ---
+        # else:
+        #     # Simple rule-based scoring if model is missing
+        #     raw_score = 0.8 # Start high
+
+        #     # Penalize for looking away
+        #     if abs(features.get('yaw', 0)) > 30:
+        #         raw_score += self.heuristic_weights['looking_away']
+        #         behaviors.append("Looking Away")
                 
-            # Penalize for looking down (phone)
-            if features.get('pitch', 0) < -20 or features.get('gaze_v', 0.0) > 0.1:
-                raw_score += self.heuristic_weights['phone_use']
-                if features.get('gaze_v', 0.0) > 0.1 and features.get('pitch', 0) < -10:
-                    behaviors.append("Looking at Watch/Phone")
-                elif features.get('pitch', 0) < -20:
-                    behaviors.append("Head Down")
+        #     # Penalize for looking down (phone)
+        #     if features.get('pitch', 0) < -20 or features.get('gaze_v', 0.0) > 0.1:
+        #         raw_score += self.heuristic_weights['phone_use']
+        #         if features.get('gaze_v', 0.0) > 0.1 and features.get('pitch', 0) < -10:
+        #             behaviors.append("Looking at Watch/Phone")
+        #         elif features.get('pitch', 0) < -20:
+        #             behaviors.append("Head Down")
 
-            raw_score = max(0.0, min(1.0, raw_score))
+        #     raw_score = max(0.0, min(1.0, raw_score))
 
-        # --- 3. Specific Behavior Detection (For User Feedback) ---
-        # Even if the ML gives the score, we want to tell the user WHY.
+        # # --- 3. Specific Behavior Detection (For User Feedback) ---
+        # # Even if the ML gives the score, we want to tell the user WHY.
         
-        # Check Yaw (Looking away)
-        if abs(features.get('yaw', 0)) > 30:
-            direction = "Left" if features.get('yaw', 0) > 0 else "Right"
-            behaviors.append(f"Looking {direction}")
+        # # Check Yaw (Looking away)
+        # if abs(features.get('yaw', 0)) > 30:
+        #     direction = "Left" if features.get('yaw', 0) > 0 else "Right"
+        #     behaviors.append(f"Looking {direction}")
 
-        # Check Pitch (Looking down/Phone)
-        if features.get('pitch', 0) < -25:
-            behaviors.append("Looking Down")
-        elif features.get('pitch', 0) > 25:
-            behaviors.append("Looking Up")
+        # # Check Pitch (Looking down/Phone)
+        # if features.get('pitch', 0) < -25:
+        #     behaviors.append("Looking Down")
+        # elif features.get('pitch', 0) > 25:
+        #     behaviors.append("Looking Up")
 
-        # Check Eyes (Sleeping)
-        if features.get('ear', 0) < 0.15:
-            behaviors.append("Eyes Closed")
+        # # Check Eyes (Sleeping)
+        # if features.get('ear', 0) < 0.15:
+        #     behaviors.append("Eyes Closed")
 
-        # Check Mouth (Yawning)
-        if features.get('mar', 0) > 0.5:
-            behaviors.append("Yawning")
-            raw_score -= 0.4
+        # # Check Mouth (Yawning)
+        # if features.get('mar', 0) > 0.5:
+        #     behaviors.append("Yawning")
+        #     raw_score -= 0.4
         
         # --- 4. Smoothing ---
         # Use Exponential Moving Average to prevent jitter

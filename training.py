@@ -140,7 +140,6 @@ def train_and_save():
         print(f"Error: Dataset folder '{DATASET_PATH}' not found.")
         print("Please create the folder structure described in the guide.")
         return
-
     print("Starting Feature Extraction...")
     df = extract_data_from_dataset(DATASET_PATH)
     

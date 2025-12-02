@@ -18,7 +18,8 @@ LABEL_MAPPING = {
     # Engaged
     "neutralface": 1,
     "frowning": 1,  # Assuming frowning indicates concentration/focus
-    
+    "nodding": 1,
+
     # Not Engaged
     "drinking": 0,
     "phone": 0,
@@ -129,7 +130,9 @@ def process_frame(image, holistic, extractor, label, data_list, label_list):
                 'ear_left': features['ear_left'],
                 'ear_right': features['ear_right'],
                 'ear_avg': features['ear'],
-                'mar': features['mar']
+                'mar': features['mar'],
+                'gaze_h': features.get('gaze_h', 0.5), 
+                'gaze_v': features.get('gaze_v', 0.0)
             }
             data_list.append(feature_vector)
             label_list.append(label)
@@ -149,7 +152,11 @@ def train_and_save():
 
     print(f"Extracted {len(df)} samples.")
     print(df['label'].value_counts())
-
+    # Balance the dataset (Undersample Majority)
+    g = df.groupby('label')
+    df = g.apply(lambda x: x.sample(g.size().min()).reset_index(drop=True)).reset_index(drop=True)
+    print("Balanced Dataset Counts:\n", df['label'].value_counts())
+    
     # 2. Prepare Data for Training
     X = df.drop('label', axis=1)
     y = df['label']

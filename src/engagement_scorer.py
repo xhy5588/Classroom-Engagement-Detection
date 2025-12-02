@@ -7,7 +7,8 @@ class EngagementScorer:
     def __init__(self, model_path="engagement_model.pkl"):
         # History buffers for smoothing the output score
         self.score_history = deque(maxlen=30)  # Smooth over last ~1 second (at 30fps)
-        
+        self.pitch_history = deque(maxlen=15)
+
         # Load the trained ML model
         self.model = None
         if os.path.exists(model_path):
@@ -58,7 +59,9 @@ class EngagementScorer:
                 features.get('ear_left', 0),
                 features.get('ear_right', 0),
                 features.get('ear', 0),      # This corresponds to 'ear_avg' in training
-                features.get('mar', 0)
+                features.get('mar', 0),
+                features.get('gaze_h', 0.5), 
+                features.get('gaze_v', 0.0)  
             ]]
             
             # Predict Class (0 or 1) and Probability
@@ -69,20 +72,31 @@ class EngagementScorer:
             except Exception as e:
                 print(f"Prediction Error: {e}")
                 raw_score = 0.5 # Fallback
-        
+
+        if len(self.pitch_history) >= 10:
+            pitch_var = np.var(self.pitch_history)
+            if pitch_var > 15: # High variance = movement
+                raw_score = max(raw_score, 0.85) # Force High Score
+                behaviors.append("Nodding")
+
         # --- 2. Heuristic Fallback (Secondary Method) ---
         else:
             # Simple rule-based scoring if model is missing
             raw_score = 0.8 # Start high
-            
+
             # Penalize for looking away
             if abs(features.get('yaw', 0)) > 30:
                 raw_score += self.heuristic_weights['looking_away']
-            
-            # Penalize for looking down (phone)
-            if features.get('pitch', 0) < -20:
-                raw_score += self.heuristic_weights['phone_use']
+                behaviors.append("Looking Away")
                 
+            # Penalize for looking down (phone)
+            if features.get('pitch', 0) < -20 or features.get('gaze_v', 0.0) > 0.1:
+                raw_score += self.heuristic_weights['phone_use']
+                if features.get('gaze_v', 0.0) > 0.1 and features.get('pitch', 0) < -10:
+                    behaviors.append("Looking at Watch/Phone")
+                elif features.get('pitch', 0) < -20:
+                    behaviors.append("Head Down")
+
             raw_score = max(0.0, min(1.0, raw_score))
 
         # --- 3. Specific Behavior Detection (For User Feedback) ---
@@ -106,7 +120,8 @@ class EngagementScorer:
         # Check Mouth (Yawning)
         if features.get('mar', 0) > 0.5:
             behaviors.append("Yawning")
-
+            raw_score -= 0.4
+        
         # --- 4. Smoothing ---
         # Use Exponential Moving Average to prevent jitter
         if self.score_history:

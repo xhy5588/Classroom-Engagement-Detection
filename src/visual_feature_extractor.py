@@ -48,8 +48,8 @@ class VisualFeatureExtractor:
         # 3. Mouth Aspect Ratio (MAR)
         mar = self._calculate_mar(face_landmarks, self.MOUTH, h, w)
         
-        # 4. Body Pose Features (Hand Raise)
-        # Hand raise detection removed due to false positives
+        # 4. Gaze Ratio (REQUIRED for distinguishing Watch vs Neutral)
+        gaze_h, gaze_v = self._calculate_gaze(face_landmarks, h, w)
 
         return {
             'pitch': pitch,
@@ -58,9 +58,34 @@ class VisualFeatureExtractor:
             'ear_left': ear_left,
             'ear_right': ear_right,
             'ear': avg_ear,
-            'mar': mar
+            'mar': mar,
+            'gaze_h': gaze_h,
+            'gaze_v': gaze_v
         }
         
+    def _calculate_gaze(self, landmarks, h, w):
+        try:
+            # Left Eye: Inner(33), Outer(133), Iris(468)
+            l_inner = np.array([landmarks.landmark[33].x * w, landmarks.landmark[33].y * h])
+            l_outer = np.array([landmarks.landmark[133].x * w, landmarks.landmark[133].y * h])
+            l_iris = np.array([landmarks.landmark[468].x * w, landmarks.landmark[468].y * h])
+            
+            eye_width = np.linalg.norm(l_inner - l_outer)
+            if eye_width == 0: return 0.5, 0.0
+            
+            # Horizontal: Distance to inner corner / Total width
+            dist_to_inner = np.linalg.norm(l_iris - l_inner)
+            dist_to_outer = np.linalg.norm(l_iris - l_outer)
+            gaze_h = dist_to_inner / (dist_to_inner + dist_to_outer)
+            
+            # Vertical: Iris Y relative to eye center
+            center_y = (l_inner[1] + l_outer[1]) / 2
+            gaze_v = (l_iris[1] - center_y) / eye_width 
+            
+            return gaze_h, gaze_v
+        except:
+            return 0.5, 0.0
+
     def _get_head_pose(self, landmarks, h, w):
         """
         Estimate Head Pose (Pitch, Yaw, Roll) using PnP algorithm.

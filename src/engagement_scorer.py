@@ -1,119 +1,131 @@
 import numpy as np
+import pickle
+import os
 from collections import deque
 
 class EngagementScorer:
-    def __init__(self):
-        # History buffers for smoothing
-        self.score_history = deque(maxlen=30) # 1 second at 30fps
-        self.pitch_history = deque(maxlen=10)
+    def __init__(self, model_path="engagement_model.pkl"):
+        # History buffers for smoothing the output score
+        self.score_history = deque(maxlen=30)  # Smooth over last ~1 second (at 30fps)
         
-        # State tracking for behaviors
-        self.is_nodding = False
-        self.is_speaking = False
-        
-        # Scoring Weights
-        self.base_score = 0.5
-        self.weights = {
-            # 'hand_raise': 1.0,     # Removed due to false positives
+        # Load the trained ML model
+        self.model = None
+        if os.path.exists(model_path):
+            try:
+                with open(model_path, 'rb') as f:
+                    self.model = pickle.load(f)
+                print(f"Successfully loaded ML model from {model_path}")
+            except Exception as e:
+                print(f"Error loading model: {e}")
+        else:
+            print(f"Warning: Model not found at {model_path}. Using heuristic fallback.")
+
+        # Heuristic weights (Used ONLY if model fails or for specific behavior tagging)
+        self.heuristic_weights = {
             'looking_away': -0.3,
             'phone_use': -0.4,
             'yawning': -0.3,
-            'sleeping': -0.8,
-            'nodding': 0.2,
-            'speaking': 0.15
+            'sleeping': -0.8
         }
 
     def calculate_score(self, features):
         """
         Calculate engagement score (0.0 to 1.0) based on visual features.
-        Returns: (score, status_text, detected_behaviors)
+        
+        Args:
+            features (dict): Dictionary containing:
+                - pitch, yaw, roll (Head Pose)
+                - ear_left, ear_right, ear (Eye Aspect Ratio)
+                - mar (Mouth Aspect Ratio)
+        
+        Returns: 
+            tuple: (smoothed_score, status_text, detected_behaviors)
         """
         if not features:
-            return 0.0, "No Face", []
+            return 0.0, "No Face Detected", []
 
-        score = self.base_score
         behaviors = []
+        raw_score = 0.5
 
-        # Unpack features
-        pitch = features.get('pitch', 0)
-        yaw = features.get('yaw', 0)
-        roll = features.get('roll', 0)
-        ear = features.get('ear', 0)
-        mar = features.get('mar', 0)
-        # hand_raised = features.get('hand_raised', False) # Removed
-
-        # --- Behavior Detection ---
-
-        # 1. Hand Raise (Removed)
-        # if hand_raised:
-        #     score = 1.0
-        #     behaviors.append("Hand Raised")
-        #     return score, "Highly Engaged", behaviors
-
-        # 2. Looking at Phone (Assumption: Looking down significantly)
-        # Threshold: Pitch < -25 degrees (looking down)
-        if pitch < -25:
-            score += self.weights['phone_use']
-            behaviors.append("Looking Down/Phone")
-        
-        # 3. Looking Away (Side)
-        elif abs(yaw) > 30:
-            score += self.weights['looking_away']
-            behaviors.append("Looking Away")
-        
-        # 4. Yawning
-        # Threshold: MAR > 0.5 (Open wide)
-        if mar > 0.5:
-            score += self.weights['yawning']
-            behaviors.append("Yawning")
+        # --- 1. ML Model Inference (Primary Method) ---
+        if self.model:
+            # Prepare feature vector in the EXACT order used during training
+            # Columns: pitch, yaw, roll, ear_left, ear_right, ear_avg, mar
+            input_features = [[
+                features.get('pitch', 0),
+                features.get('yaw', 0),
+                features.get('roll', 0),
+                features.get('ear_left', 0),
+                features.get('ear_right', 0),
+                features.get('ear', 0),      # This corresponds to 'ear_avg' in training
+                features.get('mar', 0)
+            ]]
             
-        # 5. Sleeping / Drowsy
-        # Threshold: EAR < 0.15 (Eyes closed)
-        if ear < 0.15:
-            score += self.weights['sleeping']
+            # Predict Class (0 or 1) and Probability
+            # model.classes_ is usually [0, 1]. index 1 is 'Engaged'
+            try:
+                prob = self.model.predict_proba(input_features)[0]
+                raw_score = prob[1]  # Probability of class 1 (Engaged)
+            except Exception as e:
+                print(f"Prediction Error: {e}")
+                raw_score = 0.5 # Fallback
+        
+        # --- 2. Heuristic Fallback (Secondary Method) ---
+        else:
+            # Simple rule-based scoring if model is missing
+            raw_score = 0.8 # Start high
+            
+            # Penalize for looking away
+            if abs(features.get('yaw', 0)) > 30:
+                raw_score += self.heuristic_weights['looking_away']
+            
+            # Penalize for looking down (phone)
+            if features.get('pitch', 0) < -20:
+                raw_score += self.heuristic_weights['phone_use']
+                
+            raw_score = max(0.0, min(1.0, raw_score))
+
+        # --- 3. Specific Behavior Detection (For User Feedback) ---
+        # Even if the ML gives the score, we want to tell the user WHY.
+        
+        # Check Yaw (Looking away)
+        if abs(features.get('yaw', 0)) > 30:
+            direction = "Left" if features.get('yaw', 0) > 0 else "Right"
+            behaviors.append(f"Looking {direction}")
+
+        # Check Pitch (Looking down/Phone)
+        if features.get('pitch', 0) < -25:
+            behaviors.append("Looking Down")
+        elif features.get('pitch', 0) > 25:
+            behaviors.append("Looking Up")
+
+        # Check Eyes (Sleeping)
+        if features.get('ear', 0) < 0.15:
             behaviors.append("Eyes Closed")
 
-        # 6. Head Tilt
-        if abs(roll) > 20:
-             behaviors.append(f"Head Tilt {'Left' if roll > 0 else 'Right'}")
+        # Check Mouth (Yawning)
+        if features.get('mar', 0) > 0.5:
+            behaviors.append("Yawning")
 
-        # 7. Nodding Detection (Simple Variance check)
-        self.pitch_history.append(pitch)
-        if len(self.pitch_history) == 10:
-            pitch_variance = np.var(self.pitch_history)
-            # If variance is high but mean is roughly centered, likely nodding
-            if pitch_variance > 10 and abs(np.mean(self.pitch_history)) < 15:
-                score += self.weights['nodding']
-                behaviors.append("Nodding")
-
-        # 8. Speaking Detection (Visual only)
-        # Rapid changes in MAR usually indicate speaking
-        # (For now, we use a simple threshold range)
-        if 0.1 < mar < 0.4:
-             # This is weak without audio, but a placeholder
-             pass
-
-        # --- Final Score Calculation ---
-        
-        # Clamp score
-        score = max(0.0, min(1.0, score))
-        
-        # Smoothing (Exponential Moving Average)
+        # --- 4. Smoothing ---
+        # Use Exponential Moving Average to prevent jitter
         if self.score_history:
             prev_score = self.score_history[-1]
-            smoothed_score = (score * 0.2) + (prev_score * 0.8)
+            smoothed_score = (raw_score * 0.15) + (prev_score * 0.85)
         else:
-            smoothed_score = score
+            smoothed_score = raw_score
             
         self.score_history.append(smoothed_score)
 
-        # Status Text
-        if smoothed_score > 0.7:
+        # --- 5. Status Text ---
+        if smoothed_score > 0.75:
+            status = "Highly Engaged"
+        elif smoothed_score > 0.5:
             status = "Engaged"
-        elif smoothed_score > 0.3:
-            status = "Neutral"
-        else:
+        elif smoothed_score > 0.25:
             status = "Distracted"
+        else:
+            status = "Not Engaged"
 
         return smoothed_score, status, behaviors
 

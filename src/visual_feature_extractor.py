@@ -49,7 +49,13 @@ class VisualFeatureExtractor:
         mar = self._calculate_mar(face_landmarks, self.MOUTH, h, w)
         
         # 4. Body Pose Features (Hand Raise)
-        # Hand raise detection removed due to false positives
+        is_hand_raised = self._detect_handraise(pose_landmarks, h, w)
+        
+        # 5. Hand-to-Face Distance
+        hand_face_dist = self._calculate_hand_face_distance(pose_landmarks, face_landmarks, h, w)
+
+        # 6. Frowning Detection
+        frown_score = self._detect_frown(face_landmarks, h, w)
 
         return {
             'pitch': pitch,
@@ -58,7 +64,10 @@ class VisualFeatureExtractor:
             'ear_left': ear_left,
             'ear_right': ear_right,
             'ear': avg_ear,
-            'mar': mar
+            'mar': mar,
+            'hand_face_dist': hand_face_dist,
+            'hand_raised': is_hand_raised,
+            'frown_score': frown_score
         }
         
     def _get_head_pose(self, landmarks, h, w):
@@ -176,4 +185,109 @@ class VisualFeatureExtractor:
             
         mar = v_dist / h_dist
         return mar
+
+    def _calculate_hand_face_distance(self, pose_landmarks, face_landmarks, h, w):
+        """
+        Calculate the minimum distance between wrists and the mouth/ears.
+        Returns normalized distance (relative to image diagonal or similar).
+        """
+        if not pose_landmarks or not face_landmarks:
+            return 1.0 # Max distance if not detected
+
+        # Pose Indices: 15 (Left Wrist), 16 (Right Wrist)
+        # Face Indices: 0 (Lips Center), 234 (Left Ear), 454 (Right Ear)
+        
+        def get_pose_point(idx):
+            lm = pose_landmarks.landmark[idx]
+            return np.array([lm.x * w, lm.y * h])
+            
+        def get_face_point(idx):
+            lm = face_landmarks.landmark[idx]
+            return np.array([lm.x * w, lm.y * h])
+
+        left_wrist = get_pose_point(15)
+        right_wrist = get_pose_point(16)
+        
+        mouth = get_face_point(0)
+        left_ear = get_face_point(234)
+        right_ear = get_face_point(454)
+        
+        # Calculate distances
+        # We care about ANY hand being close to ANY relevant face part
+        targets = [mouth, left_ear, right_ear]
+        wrists = [left_wrist, right_wrist]
+        
+        min_dist = float('inf')
+        
+        for wrist in wrists:
+            for target in targets:
+                dist = np.linalg.norm(wrist - target)
+                if dist < min_dist:
+                    min_dist = dist
+                    
+        # Normalize by face width (approx) to be scale invariant
+        # Face width ~ distance between ears (234 and 454)
+        face_width = np.linalg.norm(left_ear - right_ear)
+        if face_width > 0:
+            normalized_dist = min_dist / face_width
+        else:
+            normalized_dist = min_dist / 100.0 # Fallback
+            
+        return normalized_dist
+
+    def _detect_frown(self, landmarks, h, w):
+        """
+        Detects frowning based on the distance between inner eyebrows.
+        Returns a score (lower distance = more likely frowning).
+        """
+        # Indices for inner eyebrows: 107 (Left), 336 (Right)
+        # Indices for outer eyes (for normalization): 33 (Left), 263 (Right)
+        
+        def get_point(idx):
+            lm = landmarks.landmark[idx]
+            return np.array([lm.x * w, lm.y * h])
+            
+        inner_brow_left = get_point(107)
+        inner_brow_right = get_point(336)
+        
+        outer_eye_left = get_point(33)
+        outer_eye_right = get_point(263)
+        
+        brow_dist = np.linalg.norm(inner_brow_left - inner_brow_right)
+        eye_dist = np.linalg.norm(outer_eye_left - outer_eye_right)
+        
+        if eye_dist == 0:
+            return 0.0
+            
+        # Normalized brow distance
+        norm_brow_dist = brow_dist / eye_dist
+        
+        return norm_brow_dist
+
+    def _detect_handraise(self, pose_landmarks, h, w):
+        """
+        Detects if either hand is raised above the shoulders.
+        """
+        if not pose_landmarks:
+            return False
+            
+        # Indices: 
+        # 11: Left Shoulder, 12: Right Shoulder
+        # 15: Left Wrist, 16: Right Wrist
+        
+        left_shoulder_y = pose_landmarks.landmark[11].y
+        right_shoulder_y = pose_landmarks.landmark[12].y
+        
+        left_wrist_y = pose_landmarks.landmark[15].y
+        right_wrist_y = pose_landmarks.landmark[16].y
+        
+        # Y increases downwards. So higher (in space) means lower Y value.
+        # Check if wrist is significantly above shoulder (e.g. 5% of height buffer)
+        
+        threshold = 0.05 
+        
+        left_raised = left_wrist_y < (left_shoulder_y - threshold)
+        right_raised = right_wrist_y < (right_shoulder_y - threshold)
+        
+        return left_raised or right_raised
 

@@ -60,16 +60,18 @@ def main():
                     else:
                         color = (0, 0, 255)   # Red ("Not Engaged")
                     
-                    cv2.rectangle(image, (0, 0), (640, 50), (0, 0, 0), -1)
-                    cv2.putText(image, f"Status: {status} ({score:.2f})", (10, 35),
-                              cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-                              
-                    # Behavior List
-                    y_pos = 80
-                    for behavior in behaviors:
-                        cv2.putText(image, f"• {behavior}", (10, y_pos),
-                                  cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
-                        y_pos += 30
+                    # cv2.rectangle(image, (0, 0), (640, 50), (0, 0, 0), -1)
+                    # cv2.putText(image, f"Status: {status} ({score:.2f})", (10, 35),
+                    #           cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+
+                    # Line 1: Binary Status
+                    cv2.putText(image, f"Status: {status} ({score:.2f})", (10, 30),
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+                    
+                    # Line 2: Detected Category
+                    # Displaying the specific action (e.g., "Category: Yawning")
+                    cv2.putText(image, f"Action: {behaviors}", (10, 65),
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)   
                                   
                     # Debug Stats (Bottom)
                     stats = f"Yaw:{features['yaw']:.0f} Pitch:{features['pitch']:.0f} EAR:{features['ear']:.2f}"

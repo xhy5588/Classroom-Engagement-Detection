@@ -50,8 +50,14 @@ class VisualFeatureExtractor:
         
         # 4. Gaze Ratio (REQUIRED for distinguishing Watch vs Neutral)
         gaze_h, gaze_v = self._calculate_gaze(face_landmarks, h, w)
+        
+        # 5. Hand Features (REQUIRED for Drinking, Phone, RaiseHand)
+        hand_features = self._extract_hand_features(pose_landmarks, face_landmarks, h, w)
+        
+        # 6. Frowning Features (REQUIRED for Frowning)
+        frown_features = self._extract_frown_features(face_landmarks, h, w)
 
-        return {
+        features = {
             'pitch': pitch,
             'yaw': yaw,
             'roll': roll,
@@ -62,6 +68,12 @@ class VisualFeatureExtractor:
             'gaze_h': gaze_h,
             'gaze_v': gaze_v
         }
+        
+        # Merge features
+        features.update(hand_features)
+        features.update(frown_features)
+        
+        return features
         
     def _calculate_gaze(self, landmarks, h, w):
         try:
@@ -200,5 +212,136 @@ class VisualFeatureExtractor:
             return 0.0
             
         mar = v_dist / h_dist
+        mar = v_dist / h_dist
         return mar
+
+    def _extract_hand_features(self, pose_landmarks, face_landmarks, h, w):
+        """
+        Extracts hand-related features:
+        - hand_to_mouth_dist: Min distance from wrist to mouth (normalized)
+        - hand_to_ear_dist: Min distance from wrist to ear (normalized)
+        - hand_height: Max wrist Y position (normalized, inverted so higher is larger)
+        """
+        features = {
+            'hand_to_mouth': 1.0, # Default: Far
+            'hand_to_ear': 1.0,   # Default: Far
+            'hand_height': 0.0    # Default: Low
+        }
+        
+        if not pose_landmarks or not face_landmarks:
+            return features
+            
+        # Keypoints
+        # Pose: 15 (Left Wrist), 16 (Right Wrist)
+        # Face: 13 (Upper Lip), 14 (Lower Lip) -> Mouth Center
+        # Face: 234 (Left Ear), 454 (Right Ear)
+        
+        def get_pose_point(idx):
+            lm = pose_landmarks.landmark[idx]
+            # Check visibility
+            if lm.visibility < 0.5: return None
+            return np.array([lm.x * w, lm.y * h])
+            
+        def get_face_point(idx):
+            lm = face_landmarks.landmark[idx]
+            return np.array([lm.x * w, lm.y * h])
+            
+        left_wrist = get_pose_point(15)
+        right_wrist = get_pose_point(16)
+        
+        mouth_center = (get_face_point(13) + get_face_point(14)) / 2.0
+        left_ear = get_face_point(234)
+        right_ear = get_face_point(454)
+        
+        # Normalization factor (face height)
+        face_top = get_face_point(10)
+        face_bottom = get_face_point(152)
+        face_height = np.linalg.norm(face_top - face_bottom)
+        if face_height == 0: face_height = 1.0
+        
+        wrists = [w for w in [left_wrist, right_wrist] if w is not None]
+        
+        if not wrists:
+            return features
+            
+        # 1. Hand to Mouth (Min distance)
+        mouth_dists = [np.linalg.norm(wrist - mouth_center) for wrist in wrists]
+        features['hand_to_mouth'] = min(mouth_dists) / face_height
+        
+        # 2. Hand to Ear (Min distance)
+        # Check both ears for both wrists
+        ear_dists = []
+        for wrist in wrists:
+            ear_dists.append(np.linalg.norm(wrist - left_ear))
+            ear_dists.append(np.linalg.norm(wrist - right_ear))
+        features['hand_to_ear'] = min(ear_dists) / face_height
+        
+        # 3. Hand Height (Max Y, inverted because Y is down)
+        # We want "High" to be a large number.
+        # Y=0 is top, Y=1 is bottom. So (1 - y) gives height from bottom.
+        # Or just use raw Y relative to face center?
+        # Let's use: (Chin Y - Wrist Y) / Face Height. Positive = Above chin.
+        chin_y = face_bottom[1]
+        heights = [(chin_y - wrist[1]) / face_height for wrist in wrists]
+        features['hand_height'] = max(heights)
+        
+        return features
+
+    def _extract_frown_features(self, face_landmarks, h, w):
+        """
+        Extracts features specific to frowning:
+        - brow_eye_dist: Normalized distance between eyebrow and eye.
+        - mouth_curvature: Vertical difference between mouth corners and center.
+        """
+        features = {
+            'brow_eye_dist': 0.0,
+            'mouth_curvature': 0.0
+        }
+        
+        if not face_landmarks:
+            return features
+            
+        def get_point(idx):
+            lm = face_landmarks.landmark[idx]
+            return np.array([lm.x * w, lm.y * h])
+            
+        # 1. Brow-Eye Distance
+        # Left Eyebrow Middle (105) -> Left Eye Top (159)
+        # Right Eyebrow Middle (334) -> Right Eye Top (386)
+        l_brow = get_point(105)
+        l_eye = get_point(159)
+        r_brow = get_point(334)
+        r_eye = get_point(386)
+        
+        l_dist = np.linalg.norm(l_brow - l_eye)
+        r_dist = np.linalg.norm(r_brow - r_eye)
+        
+        # Normalize by face height (approx)
+        face_top = get_point(10)
+        face_bottom = get_point(152)
+        face_height = np.linalg.norm(face_top - face_bottom)
+        if face_height == 0: face_height = 1.0
+        
+        features['brow_eye_dist'] = ((l_dist + r_dist) / 2.0) / face_height
+        
+        # 2. Mouth Curvature (Sadness)
+        # Corners: 61 (Left), 291 (Right)
+        # Center: Average of 0 (Top) and 17 (Bottom) is center, but we want the "line"
+        # Let's compare Corner Y vs Center Y.
+        # If Corners are LOWER than Center (higher Y value), it's a frown/sad mouth.
+        # If Corners are HIGHER than Center (lower Y value), it's a smile.
+        
+        left_corner = get_point(61)
+        right_corner = get_point(291)
+        top_lip = get_point(0)
+        bottom_lip = get_point(17)
+        
+        mouth_center_y = (top_lip[1] + bottom_lip[1]) / 2.0
+        corners_y = (left_corner[1] + right_corner[1]) / 2.0
+        
+        # Positive = Corners are below center (Frown)
+        # Negative = Corners are above center (Smile)
+        features['mouth_curvature'] = (corners_y - mouth_center_y) / face_height
+        
+        return features
 

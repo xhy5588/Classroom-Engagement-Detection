@@ -8,6 +8,7 @@ class EngagementScorer:
         # History buffers for smoothing the output score
         self.score_history = deque(maxlen=30)  # Smooth over last ~1 second (at 30fps)
         self.pitch_history = deque(maxlen=15)
+        self.feature_buffer = deque(maxlen=30) # Window for temporal features
 
         # Load the trained ML model
         self.model = None
@@ -28,6 +29,9 @@ class EngagementScorer:
             'yawning': -0.3,
             'sleeping': -0.8
         }
+        
+        # Store latest class probabilities for visualization
+        self.latest_class_probs = {}
 
     def calculate_score(self, features):
         """
@@ -49,32 +53,63 @@ class EngagementScorer:
         raw_score = 0.5
 
         # --- 1. ML Model Inference (Primary Method) ---
+        # --- 1. ML Model Inference (Primary Method) ---
         if self.model:
-            # Prepare feature vector in the EXACT order used during training
-            # Columns: pitch, yaw, roll, ear_left, ear_right, ear_avg, mar
-            input_features = [[
-                features.get('pitch', 0),
-                features.get('yaw', 0),
-                features.get('roll', 0),
-                features.get('ear_left', 0),
-                features.get('ear_right', 0),
-                features.get('ear', 0),      # This corresponds to 'ear_avg' in training
-                features.get('mar', 0),
-                features.get('gaze_h', 0.5), 
-                features.get('gaze_v', 0.0)  
-            ]]
+            # Add current features to buffer
+            self.feature_buffer.append(features)
+            
+            # Need enough frames to calculate stats (e.g., at least 5)
+            if len(self.feature_buffer) < 5:
+                return 0.5, "Initializing...", [], {}
+                
+            # Calculate Window Stats (Mean + Std)
+            # Order MUST match training.py: 
+            # ['pitch', 'yaw', 'roll', 'ear_left', 'ear_right', 'ear', 'mar', 'gaze_h', 'gaze_v', 'hand_to_mouth', 'hand_to_ear', 'hand_height', 'brow_eye_dist', 'mouth_curvature']
+            # for each: mean, std
+            
+            cols = ['pitch', 'yaw', 'roll', 'ear_left', 'ear_right', 'ear', 'mar', 'gaze_h', 'gaze_v',
+                    'hand_to_mouth', 'hand_to_ear', 'hand_height', 'brow_eye_dist', 'mouth_curvature']
+            input_vector = []
+            
+            # Convert buffer to list of dicts for easier processing
+            buffer_list = list(self.feature_buffer)
+            
+            for col in cols:
+                values = [f.get(col, 0) for f in buffer_list]
+                mean_val = np.mean(values)
+                std_val = np.std(values)
+                input_vector.extend([mean_val, std_val])
+            
+            input_features = [input_vector]
             
             # Predict Class (0 or 1) and Probability
             # model.classes_ is usually [0, 1]. index 1 is 'Engaged'
             try:
-                prob = self.model.predict_proba(input_features)[0]
-                raw_score = prob[1]  # Probability of class 1 (Engaged)
+                probs = self.model.predict_proba(input_features)[0]
+                classes = self.model.classes_
+
+                # Map Activity to Engagement Score
+                # Define mapping here or load from shared config
+                ENGAGED_CLASSES = {"neutral", "frowning", "raisehand", "neutralface"}
+                
+                # Calculate raw score by summing probabilities of engaged classes
+                raw_score = 0.0
+                for cls, p in zip(classes, probs):
+                    if str(cls) in ENGAGED_CLASSES:
+                        raw_score += p
+                
+                # Capture all class probabilities
+                if hasattr(self.model, 'classes_'):
+                    self.latest_class_probs = {
+                        str(cls): p for cls, p in zip(self.model.classes_, probs)
+                    }
+                
             except Exception as e:
                 print(f"Prediction Error: {e}")
                 raw_score = 0.0 # Fallback
         else:
             print("Error: No model loaded. Cannot calculate score.")
-            return 0.0, "Model Error", []
+            return 0.0, "Model Error", [], {}
         # if len(self.pitch_history) >= 10:
         #     pitch_var = np.var(self.pitch_history)
         #     if pitch_var > 15: # High variance = movement
@@ -141,5 +176,7 @@ class EngagementScorer:
         else:
             status = "Not Engaged"
 
-        return smoothed_score, status, behaviors
+        # --- 6. Class Probabilities ---
+        # Return the captured probabilities
+        return smoothed_score, status, behaviors, self.latest_class_probs
 

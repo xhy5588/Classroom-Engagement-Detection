@@ -92,6 +92,19 @@ class EngagementScorer:
             print("Error: No model loaded. Cannot calculate score.")
             return 0.0, "Model Error", []
         
+        #Update history
+        self.pitch_history.append(features.get('pitch', 0))
+
+        #Check for Nodding (High Variance in Pitch)
+        if len(self.pitch_history) >= 10:
+            pitch_var = np.var(self.pitch_history)
+            if pitch_var > 15:  # Threshold for nodding intensity
+                # Force the category to nodding and score to high
+                current_category = "nodding"
+                raw_score = max(raw_score, 0.85) 
+                if "Nodding" not in behaviors:
+                    behaviors.append("Nodding")
+
         # --- 4. Smoothing ---
         # Use Exponential Moving Average to prevent jitter
         if self.score_history:

@@ -25,12 +25,12 @@ LABEL_MAPPING = {
     "phone": 3,
     "yawning": 4,
     "tilt": 5,
-    "raisehand": 6,
+    # "raisehand": REMOVED
 }
 
 BINARY_MAP = {
     0: 1, 1: 1,       # Engaged
-    2: 0, 3: 0, 4: 0, 5: 0, 6: 0 # Not Engaged
+    2: 0, 3: 0, 4: 0, 5: 0 # Not Engaged
 }
 
 def extract_data_from_dataset(dataset_path):

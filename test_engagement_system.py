@@ -57,8 +57,11 @@ def main():
                     # Determine Color based on Strict Binary Status
                     if status == "Engaged":
                         color = (0, 255, 0)   # Green
+                        feedback_msg = "Your students are listening. Good job! Keep going..."
                     else:
                         color = (0, 0, 255)   # Red ("Not Engaged")
+                        feedback_msg = "Your students may be distracted. Try ask a question or tell a joke."
+
                     
                     # cv2.rectangle(image, (0, 0), (640, 50), (0, 0, 0), -1)
                     # cv2.putText(image, f"Status: {status} ({score:.2f})", (10, 35),
@@ -71,7 +74,24 @@ def main():
                     # Line 2: Detected Category
                     # Displaying the specific action (e.g., "Category: Yawning")
                     cv2.putText(image, f"Action: {behaviors}", (10, 65),
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)   
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+
+                    # Line 3: Feedback Message
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    font_scale = 0.9
+                    thickness = 2
+                    text_size = cv2.getTextSize(feedback_msg, font, font_scale, thickness)[0]
+                    
+                    # Draw white background rectangle
+                    padding = 10
+                    cv2.rectangle(image, 
+                                (5, 95), 
+                                (text_size[0] + padding * 2, 130), 
+                                (255, 255, 255), -1)
+                    
+                    # Draw black text on white background
+                    cv2.putText(image, feedback_msg, (10, 120),
+                              font, font_scale, (0, 0, 0), thickness)  
                                   
                     # Debug Stats (Bottom)
                     stats = f"Yaw:{features['yaw']:.0f} Pitch:{features['pitch']:.0f} EAR:{features['ear']:.2f}"

@@ -19,18 +19,19 @@ LABEL_MAPPING = {
     "neutralface": 0,
     "frowning": 1,  # Assuming frowning indicates concentration/focus
     # "nodding": REMOVED
+    "raisehand": 2,
 
     # Not Engaged
-    "drinking": 2,
+    # "drinking": 2,
     "phone": 3,
     "yawning": 4,
     "tilt": 5,
-    # "raisehand": REMOVED
+
 }
 
 BINARY_MAP = {
-    0: 1, 1: 1,       # Engaged
-    2: 0, 3: 0, 4: 0, 5: 0 # Not Engaged
+    0: 1, 1: 1, 2:1,       # Engaged
+    3: 0, 4: 0, 5: 0 # Not Engaged
 }
 
 def extract_data_from_dataset(dataset_path):

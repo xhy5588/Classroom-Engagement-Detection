@@ -55,6 +55,7 @@ class EngagementScorer:
         raw_score = 0.5
         is_engaged_binary = 0
         prob_dict = {}
+
         
         # Update feature buffer
         self.feature_buffer.append(features)
@@ -74,7 +75,7 @@ class EngagementScorer:
         
         # Phone Heuristic: Looking down significantly
         # Pitch > 20 usually means looking down (depending on coord system, assuming standard)
-        is_phone = pitch > 20.0 
+        is_phone = pitch > 15.0 
         
         is_nodding = False
         if len(self.pitch_history) >= 15:
@@ -191,8 +192,8 @@ class EngagementScorer:
                         status = "Not Engaged"
                         raw_score = 0.0
                     elif override_category == "raisehand":
-                        status = "Not Engaged"
-                        raw_score = 0.0
+                        status = "Engaged"
+                        raw_score = 1.0
                         
                 else:
                     # Standard Model Logic

@@ -18,19 +18,19 @@ LABEL_MAPPING = {
     # Engaged
     "neutralface": 0,
     "frowning": 1,  # Assuming frowning indicates concentration/focus
-    "nodding": 2,
+    # "nodding": REMOVED
 
     # Not Engaged
-    "drinking": 3,
-    "phone": 4,
-    "yawning": 5,
-    "tilt": 6,
-    "raisehand": 7,
+    "drinking": 2,
+    "phone": 3,
+    "yawning": 4,
+    "tilt": 5,
+    # "raisehand": REMOVED
 }
 
 BINARY_MAP = {
-    0: 1, 1: 1, 2: 1,       # Engaged
-    3: 0, 4: 0, 5: 0, 6: 0, 7: 0 # Not Engaged
+    0: 1, 1: 1,       # Engaged
+    2: 0, 3: 0, 4: 0, 5: 0 # Not Engaged
 }
 
 def extract_data_from_dataset(dataset_path):
@@ -89,57 +89,110 @@ def process_image(image_path, holistic, extractor, label, data_list, label_list)
     if image is None: 
         return
 
-    process_frame(image, holistic, extractor, label, data_list, label_list)
+    # For images, we treat them as a single frame with 0 variance
+    features = extract_raw_features(image, holistic, extractor)
+    if features:
+        # Generate synthetic history with noise to simulate "still video"
+        # This prevents the model from overfitting to "zero variance" = "not nodding"
+        synthetic_history = []
+        window_size = 30
+        
+        for _ in range(window_size):
+            noisy_features = features.copy()
+            # Add small Gaussian noise to temporal keys
+            for key in ['pitch', 'yaw', 'roll', 'ear', 'mar']:
+                if key in noisy_features:
+                    # Noise scale: 0.5 degrees for angles, 0.005 for ratios
+                    scale = 0.5 if key in ['pitch', 'yaw', 'roll'] else 0.005
+                    noisy_features[key] += np.random.normal(0, scale)
+            synthetic_history.append(noisy_features)
+
+        # Add temporal features (std > 0 now)
+        feature_vector = create_feature_vector(features, synthetic_history, is_video=True)
+        data_list.append(feature_vector)
+        label_list.append(label)
 
 def process_video(video_path, holistic, extractor, label, data_list, label_list):
     cap = cv2.VideoCapture(video_path)
+    
+    # Buffer for sliding window
+    window_size = 30
+    feature_buffer = []
+    
     frame_count = 0
-    skip_frames = 5 # Process every 5th frame to reduce redundancy and speed up training
+    sample_rate = 5 # Add to dataset every 5 frames
     
     while cap.isOpened():
         success, frame = cap.read()
         if not success:
             break
             
-        frame_count += 1
-        if frame_count % skip_frames != 0:
-            continue
+        features = extract_raw_features(frame, holistic, extractor)
+        if features:
+            feature_buffer.append(features)
             
-        process_frame(frame, holistic, extractor, label, data_list, label_list)
+            # Maintain buffer size
+            if len(feature_buffer) > window_size:
+                feature_buffer.pop(0)
+            
+            # Only add to dataset if we have enough history AND it's a sampling frame
+            if len(feature_buffer) >= window_size and frame_count % sample_rate == 0:
+                # Calculate temporal stats
+                feature_vector = create_feature_vector(features, feature_buffer, is_video=True)
+                data_list.append(feature_vector)
+                label_list.append(label)
+                
+        frame_count += 1
         
     cap.release()
 
-def process_frame(image, holistic, extractor, label, data_list, label_list):
+def extract_raw_features(image, holistic, extractor):
     # Convert to RGB
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    
-    # Process with MediaPipe
     results = holistic.process(image_rgb)
     
-    # Extract features using your existing class
-    # Note: We need results.face_landmarks. If None, we skip this frame.
     if results.face_landmarks:
-        features = extractor.extract_features(
+        return extractor.extract_features(
             results.face_landmarks, 
             results.pose_landmarks, 
             image.shape
         )
-        
-        if features:
-            # Flatten dictionary to list in specific order
-            feature_vector = {
-                'pitch': features['pitch'],
-                'yaw': features['yaw'],
-                'roll': features['roll'],
-                'ear_left': features['ear_left'],
-                'ear_right': features['ear_right'],
-                'ear_avg': features['ear'],
-                'mar': features['mar'],
-                'gaze_h': features.get('gaze_h', 0.5), 
-                'gaze_v': features.get('gaze_v', 0.0)
-            }
-            data_list.append(feature_vector)
-            label_list.append(label)
+    return None
+
+def create_feature_vector(current_features, history, is_video=True):
+    # Base features
+    vector = {
+        'pitch': current_features['pitch'],
+        'yaw': current_features['yaw'],
+        'roll': current_features['roll'],
+        'ear_left': current_features['ear_left'],
+        'ear_right': current_features['ear_right'],
+        'ear_avg': current_features['ear'],
+        'mar': current_features['mar'],
+        'gaze_h': current_features.get('gaze_h', 0.5), 
+        'gaze_v': current_features.get('gaze_v', 0.0)
+    }
+    
+    # Temporal features to calculate stats for
+    temporal_keys = ['pitch', 'yaw', 'roll', 'ear', 'mar']
+    
+    if is_video and isinstance(history, list):
+        # Calculate stats from history buffer
+        for key in temporal_keys:
+            values = [f[key] for f in history]
+            vector[f'{key}_mean'] = np.mean(values)
+            vector[f'{key}_std'] = np.std(values)
+    else:
+        # Static image or single frame fallback
+        for key in temporal_keys:
+            val = current_features[key] if key in current_features else current_features.get('ear_avg' if key == 'ear' else key, 0)
+            # Note: 'ear' key in features is 'ear' (avg), but we mapped it to 'ear_avg' in vector previously. 
+            # In extract_features it returns 'ear'.
+            
+            vector[f'{key}_mean'] = val
+            vector[f'{key}_std'] = 0.0
+            
+    return vector
 
 def train_and_save():
     # 1. Extract Data

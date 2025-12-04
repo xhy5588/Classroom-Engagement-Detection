@@ -51,6 +51,71 @@ class VisualFeatureExtractor:
         # 4. Gaze Ratio (REQUIRED for distinguishing Watch vs Neutral)
         gaze_h, gaze_v = self._calculate_gaze(face_landmarks, h, w)
 
+        # 5. Hand Features (Pose)
+        hand_raised = 0.0
+        hand_near_mouth = 0.0
+        
+        if pose_landmarks:
+            # Indices: 13(L_Elbow), 14(R_Elbow), 15(L_Wrist), 16(R_Wrist)
+            l_elbow = pose_landmarks.landmark[13]
+            r_elbow = pose_landmarks.landmark[14]
+            l_wrist = pose_landmarks.landmark[15]
+            r_wrist = pose_landmarks.landmark[16]
+            
+            # Check Hand Raised (Wrist above Elbow - y is inverted)
+            if l_wrist.y < l_elbow.y or r_wrist.y < r_elbow.y:
+                hand_raised = 1.0
+                
+            # Check Hand Near Mouth (Drinking/Yawning/Phone)
+            mouth_center = np.mean([
+                [face_landmarks.landmark[13].x, face_landmarks.landmark[13].y], # Upper lip
+                [face_landmarks.landmark[14].x, face_landmarks.landmark[14].y]  # Lower lip
+            ], axis=0)
+            
+            # Check multiple hand points: Wrist, Index Tip, Pinky Tip
+            # Indices: L_Wrist(15), R_Wrist(16), L_Pinky(17), R_Pinky(18), L_Index(19), R_Index(20)
+            
+            def is_near(p_idx):
+                p = pose_landmarks.landmark[p_idx]
+                dist = np.linalg.norm([p.x - mouth_center[0], p.y - mouth_center[1]])
+                return dist < 0.3 # Relaxed threshold (was 0.25)
+
+            if (is_near(15) or is_near(17) or is_near(19) or  # Left Hand
+                is_near(16) or is_near(18) or is_near(20)):   # Right Hand
+                hand_near_mouth = 1.0
+
+        # 6. Eyebrow Features (for Frowning)
+        # Simple metric: Distance between eyebrow and eye
+        # Left Eyebrow Middle (105) to Left Eye Top (159)
+        # Right Eyebrow Middle (334) to Right Eye Top (386)
+        # Normalize by inter-ocular distance or something stable? 
+        # Let's normalize by face bounding box height (approx).
+        
+        brow_dist = 0.0
+        try:
+            l_brow = np.array([face_landmarks.landmark[65].x, face_landmarks.landmark[65].y]) # 105 is middle? 65 is closer to inner?
+            # Let's use standard points. 
+            # Left Brow: 70, 63, 105, 66, 107
+            # Right Brow: 336, 296, 334, 293, 300
+            # Left Eye Top: 159
+            # Right Eye Top: 386
+            
+            l_brow_y = face_landmarks.landmark[105].y
+            l_eye_y = face_landmarks.landmark[159].y
+            r_brow_y = face_landmarks.landmark[334].y
+            r_eye_y = face_landmarks.landmark[386].y
+            
+            # Distance is (Eye Y - Brow Y) because Y increases downwards. 
+            # So Eye (lower) - Brow (higher) should be positive.
+            # Frowning -> Brow goes down -> Distance decreases.
+            
+            l_dist_brow = l_eye_y - l_brow_y
+            r_dist_brow = r_eye_y - r_brow_y
+            
+            brow_dist = (l_dist_brow + r_dist_brow) / 2.0
+        except:
+            brow_dist = 0.05 # Default
+
         return {
             'pitch': pitch,
             'yaw': yaw,
@@ -60,7 +125,10 @@ class VisualFeatureExtractor:
             'ear': avg_ear,
             'mar': mar,
             'gaze_h': gaze_h,
-            'gaze_v': gaze_v
+            'gaze_v': gaze_v,
+            'hand_raised': hand_raised,
+            'hand_near_mouth': hand_near_mouth,
+            'brow_dist': brow_dist
         }
         
     def _calculate_gaze(self, landmarks, h, w):

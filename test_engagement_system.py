@@ -1,5 +1,6 @@
 import cv2
 import mediapipe as mp
+import numpy as np
 from src.visual_feature_extractor import VisualFeatureExtractor
 from src.engagement_scorer import EngagementScorer
 
@@ -50,7 +51,7 @@ def main():
                 
                 # 3. Calculate Engagement
                 if features:
-                    score, status, behaviors = scorer.calculate_score(features)
+                    score, status, behaviors, prob_dict = scorer.calculate_score(features)
                     
                     # --- UI Display ---
                     
@@ -60,22 +61,60 @@ def main():
                     else:
                         color = (0, 0, 255)   # Red ("Not Engaged")
                     
-                    # cv2.rectangle(image, (0, 0), (640, 50), (0, 0, 0), -1)
-                    # cv2.putText(image, f"Status: {status} ({score:.2f})", (10, 35),
-                    #           cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-
                     # Line 1: Binary Status
                     cv2.putText(image, f"Status: {status} ({score:.2f})", (10, 30),
                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
                     
                     # Line 2: Detected Category
-                    # Displaying the specific action (e.g., "Category: Yawning")
                     cv2.putText(image, f"Action: {behaviors}", (10, 65),
                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)   
                                   
                     # Debug Stats (Bottom)
                     stats = f"Yaw:{features['yaw']:.0f} Pitch:{features['pitch']:.0f} EAR:{features['ear']:.2f}"
                     cv2.putText(image, stats, (10, 470), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+
+                    # --- Side Panel for Probabilities ---
+                    panel_width = 300
+                    panel_height = image.shape[0]
+                    panel = np.zeros((panel_height, panel_width, 3), dtype=np.uint8)
+                    
+                    if prob_dict:
+                        y_offset = 40
+                        bar_height = 20
+                        
+                        # Find max prob for highlighting
+                        # prob_dict is {name: prob}
+                        max_prob_name = max(prob_dict, key=prob_dict.get)
+                        
+                        cv2.putText(panel, "Class Probabilities", (10, 25), 
+                                  cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+                        # Sort by Name for consistent order
+                        sorted_names = sorted(prob_dict.keys())
+                        
+                        for name in sorted_names:
+                            prob = prob_dict[name]
+                            
+                            # Highlight max probability
+                            if name == max_prob_name:
+                                text_color = (0, 255, 0) # Green
+                                bar_color = (0, 255, 0)
+                            else:
+                                text_color = (200, 200, 200) # Gray
+                                bar_color = (100, 100, 100)
+                            
+                            # Draw Label
+                            cv2.putText(panel, f"{name}: {prob:.2f}", (10, y_offset + 15),
+                                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1)
+                            
+                            # Draw Bar
+                            bar_width = int(prob * (panel_width - 20))
+                            cv2.rectangle(panel, (10, y_offset + 20), (10 + bar_width, y_offset + 20 + bar_height), bar_color, -1)
+                            
+                            y_offset += 50
+
+                    # Combine Image and Panel
+                    image = cv2.hconcat([image, panel])
 
             cv2.imshow('Engagement Detection Demo v0', image)
             

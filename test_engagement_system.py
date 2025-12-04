@@ -69,6 +69,7 @@ def main():
                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
                     
                     # Line 2: Detected Category
+                    # Displaying the specific action (e.g., "Category: Yawning")
                     cv2.putText(image, f"Action: {behaviors}", (10, 65),
                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
 

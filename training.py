@@ -202,6 +202,8 @@ def train_and_save():
         return
     print("Starting Feature Extraction...")
     df = extract_data_from_dataset(DATASET_PATH)
+
+    
     
     if df.empty:
         print("No data found! Check your dataset structure.")
@@ -209,18 +211,23 @@ def train_and_save():
 
     print(f"Extracted {len(df)} samples.")
     print(df['label'].value_counts())
-    # Balance the dataset (Undersample Majority)
-    g = df.groupby('label')
-    try:
-        df = g.apply(lambda x: x.sample(g.size().min()), include_groups=False).reset_index(drop=True)
-        # Restore label column if lost during include_groups=False
-        if 'label' not in df.columns:
-             # Re-merge or handle depending on pandas version, 
-             # simpler fix for older pandas compat:
-             df = g.apply(lambda x: x.sample(g.size().min())).reset_index(drop=True)
-    except TypeError:
-         df = g.apply(lambda x: x.sample(g.size().min())).reset_index(drop=True)
-    print("Balanced Dataset Counts:\n", df['label'].value_counts())
+    # # Balance the dataset (Undersample Majority)
+    # g = df.groupby('label')
+    # try:
+    #     df = g.apply(lambda x: x.sample(g.size().min()), include_groups=False).reset_index(drop=True)
+    #     # Restore label column if lost during include_groups=False
+    #     if 'label' not in df.columns:
+    #          # Re-merge or handle depending on pandas version, 
+    #          # simpler fix for older pandas compat:
+    #          df = g.apply(lambda x: x.sample(g.size().min())).reset_index(drop=True)
+    # except TypeError:
+    #      df = g.apply(lambda x: x.sample(g.size().min())).reset_index(drop=True)
+    # print("Balanced Dataset Counts:\n", df['label'].value_counts())
+
+    # Skip balancing - use unbalanced data as-is
+    print("Using unbalanced dataset (no undersampling applied)")
+    print("Class distribution:\n", df['label'].value_counts())
+    
 
     # 2. Prepare Data for Training
     X = df.drop('label', axis=1)

@@ -98,53 +98,53 @@ def main():
                     stats = f"Yaw:{features['yaw']:.0f} Pitch:{features['pitch']:.0f} EAR:{features['ear']:.2f}"
                     cv2.putText(image, stats, (10, 470), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
 
-                    # --- Side Panel for Probabilities ---
-                    panel_width = 380   # wider panel
-                    panel_height = image.shape[0]
-                    panel = np.zeros((panel_height, panel_width, 3), dtype=np.uint8)
+                    # # --- Side Panel for Probabilities ---
+                    # panel_width = 380   # wider panel
+                    # panel_height = image.shape[0]
+                    # panel = np.zeros((panel_height, panel_width, 3), dtype=np.uint8)
 
-                    if prob_dict:
-                        y_offset = 50
-                        bar_height = 28   # taller bars
+                    # if prob_dict:
+                    #     y_offset = 50
+                    #     bar_height = 28   # taller bars
                         
-                        title_font_scale = 1.0
-                        label_font_scale = 0.9   # BIGGER TEXT
-                        thickness = 2             # BOLDER TEXT
+                    #     title_font_scale = 1.0
+                    #     label_font_scale = 0.9   # BIGGER TEXT
+                    #     thickness = 2             # BOLDER TEXT
 
-                        max_prob_name = max(prob_dict, key=prob_dict.get)
+                    #     max_prob_name = max(prob_dict, key=prob_dict.get)
 
-                        cv2.putText(panel, "Class Probabilities", (10, 35), 
-                                cv2.FONT_HERSHEY_SIMPLEX, title_font_scale, (255, 255, 255), 2)
+                    #     cv2.putText(panel, "Class Probabilities", (10, 35), 
+                    #             cv2.FONT_HERSHEY_SIMPLEX, title_font_scale, (255, 255, 255), 2)
 
-                        sorted_names = sorted(prob_dict.keys())
+                    #     sorted_names = sorted(prob_dict.keys())
 
-                        for name in sorted_names:
-                            prob = prob_dict[name]
+                    #     for name in sorted_names:
+                    #         prob = prob_dict[name]
 
-                            if name == max_prob_name:
-                                text_color = (0, 255, 0)
-                                bar_color = (0, 255, 0)
-                            else:
-                                text_color = (200, 200, 200)
-                                bar_color = (100, 100, 100)
+                    #         if name == max_prob_name:
+                    #             text_color = (0, 255, 0)
+                    #             bar_color = (0, 255, 0)
+                    #         else:
+                    #             text_color = (200, 200, 200)
+                    #             bar_color = (100, 100, 100)
 
-                            # Larger label text
-                            cv2.putText(panel, f"{name}: {prob:.2f}", 
-                                    (10, y_offset + 20),
-                                    cv2.FONT_HERSHEY_SIMPLEX, label_font_scale, text_color, thickness)
+                    #         # Larger label text
+                    #         cv2.putText(panel, f"{name}: {prob:.2f}", 
+                    #                 (10, y_offset + 20),
+                    #                 cv2.FONT_HERSHEY_SIMPLEX, label_font_scale, text_color, thickness)
 
-                            # Longer + taller bar
-                            bar_width = int(prob * (panel_width - 40))
-                            cv2.rectangle(panel, 
-                                        (10, y_offset + 28), 
-                                        (10 + bar_width, y_offset + 28 + bar_height), 
-                                        bar_color, -1)
+                    #         # Longer + taller bar
+                    #         bar_width = int(prob * (panel_width - 40))
+                    #         cv2.rectangle(panel, 
+                    #                     (10, y_offset + 28), 
+                    #                     (10 + bar_width, y_offset + 28 + bar_height), 
+                    #                     bar_color, -1)
 
-                            y_offset += 65   # more vertical spacing
+                    #         y_offset += 65   # more vertical spacing
 
                     
-                    # Combine Image and Panel
-                    image = cv2.hconcat([image, panel])
+                    # # Combine Image and Panel
+                    # image = cv2.hconcat([image, panel])
                     
             screen_w = 1920   # adjust if needed
             screen_h = 1080

@@ -16,17 +16,21 @@ MODEL_SAVE_PATH = "engagement_model.pkl"
 # Map your specific raw labels to Binary Engagement (0 = Not Engaged, 1 = Engaged)
 LABEL_MAPPING = {
     # Engaged
-    "neutralface": 1,
+    "neutralface": 0,
     "frowning": 1,  # Assuming frowning indicates concentration/focus
-    "nodding": 1,
+    "nodding": 2,
 
     # Not Engaged
-    "drinking": 0,
-    "phone": 0,
-    "yawning": 0,
-    "tilt": 0,
-    "raisehand": 0,
-    "watch": 0
+    "drinking": 3,
+    "phone": 4,
+    "yawning": 5,
+    "tilt": 6,
+    "raisehand": 7,
+}
+
+BINARY_MAP = {
+    0: 1, 1: 1, 2: 1,       # Engaged
+    3: 0, 4: 0, 5: 0, 6: 0, 7: 0 # Not Engaged
 }
 
 def extract_data_from_dataset(dataset_path):
@@ -154,9 +158,17 @@ def train_and_save():
     print(df['label'].value_counts())
     # Balance the dataset (Undersample Majority)
     g = df.groupby('label')
-    df = g.apply(lambda x: x.sample(g.size().min()).reset_index(drop=True)).reset_index(drop=True)
+    try:
+        df = g.apply(lambda x: x.sample(g.size().min()), include_groups=False).reset_index(drop=True)
+        # Restore label column if lost during include_groups=False
+        if 'label' not in df.columns:
+             # Re-merge or handle depending on pandas version, 
+             # simpler fix for older pandas compat:
+             df = g.apply(lambda x: x.sample(g.size().min())).reset_index(drop=True)
+    except TypeError:
+         df = g.apply(lambda x: x.sample(g.size().min())).reset_index(drop=True)
     print("Balanced Dataset Counts:\n", df['label'].value_counts())
-    
+
     # 2. Prepare Data for Training
     X = df.drop('label', axis=1)
     y = df['label']
@@ -175,12 +187,26 @@ def train_and_save():
     print("\n--- Model Evaluation ---")
     print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}")
     print("\nClassification Report:")
-    print(classification_report(y_test, y_pred, target_names=['Not Engaged', 'Engaged']))
+    sorted_labels = sorted(LABEL_MAPPING.items(), key=lambda item: item[1])
+    target_names = [item[0] for item in sorted_labels]
+    
+    # Check if all classes are present in y_test to avoid sklearn errors
+    unique_labels = sorted(list(set(y_test) | set(y_pred)))
+    filtered_names = [target_names[i] for i in unique_labels]
+
+    print(classification_report(y_test, y_pred, target_names=filtered_names))
     
     # 5. Save Model
     print(f"Saving model to {MODEL_SAVE_PATH}...")
+    id_to_name = {v: k for k, v in LABEL_MAPPING.items()}
+    
+    payload = {
+        "model": model,
+        "id_to_name": id_to_name,
+        "binary_map": BINARY_MAP
+    }
     with open(MODEL_SAVE_PATH, 'wb') as f:
-        pickle.dump(model, f)
+        pickle.dump(payload, f)
     print("Done!")
 
 if __name__ == "__main__":

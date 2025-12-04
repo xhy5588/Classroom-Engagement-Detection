@@ -11,23 +11,27 @@ class EngagementScorer:
 
         # Load the trained ML model
         self.model = None
+        self.id_to_name = {}
+        self.binary_map = {}
+
         if os.path.exists(model_path):
             try:
                 with open(model_path, 'rb') as f:
-                    self.model = pickle.load(f)
+                    data = pickle.load(f)
+                    
+                    # Handle new dictionary format or fallback to old model
+                    if isinstance(data, dict) and "model" in data:
+                        self.model = data["model"]
+                        self.id_to_name = data["id_to_name"]
+                        self.binary_map = data["binary_map"]
+                    else:
+                        self.model = data # Fallback for old binary-only models
+                        print("Warning: Old model format detected. Category detection disabled.")
+                        
                 print(f"Successfully loaded ML model from {model_path}")
             except Exception as e:
                 print(f"Error loading model: {e}")
-        else:
-            print(f"Warning: Model not found at {model_path}. Using heuristic fallback.")
 
-        # Heuristic weights (Used ONLY if model fails or for specific behavior tagging)
-        self.heuristic_weights = {
-            'looking_away': -0.3,
-            'phone_use': -0.4,
-            'yawning': -0.3,
-            'sleeping': -0.8
-        }
 
     def calculate_score(self, features):
         """
@@ -47,6 +51,7 @@ class EngagementScorer:
 
         behaviors = []
         raw_score = 0.5
+        is_engaged_binary = 0
 
         # --- 1. ML Model Inference (Primary Method) ---
         if self.model:
@@ -67,61 +72,39 @@ class EngagementScorer:
             # Predict Class (0 or 1) and Probability
             # model.classes_ is usually [0, 1]. index 1 is 'Engaged'
             try:
-                prob = self.model.predict_proba(input_features)[0]
-                raw_score = prob[1]  # Probability of class 1 (Engaged)
+                # 1. Predict the specific Category ID (0-7)
+                pred_id = self.model.predict(input_features)[0]
+                # 2. Get the Category Name (e.g., "phone")
+                current_category = self.id_to_name.get(pred_id, "Unknown")
+                # 3. Get Binary Status (1 = Engaged, 0 = Not)
+                is_engaged_binary = self.binary_map.get(pred_id, 0)
+                probs = self.model.predict_proba(input_features)[0]
+                confidence = probs[pred_id]
+                if is_engaged_binary == 1:
+                    raw_score = 0.5 + (0.5 * confidence)
+                else:
+                    raw_score = 0.5 - (0.5 * confidence)
+
             except Exception as e:
                 print(f"Prediction Error: {e}")
-                raw_score = 0.5 # Fallback
+                raw_score = 0.0 # Fallback
+        else:
+            print("Error: No model loaded. Cannot calculate score.")
+            return 0.0, "Model Error", []
+        
+        #Update history
+        self.pitch_history.append(features.get('pitch', 0))
 
+        #Check for Nodding (High Variance in Pitch)
         if len(self.pitch_history) >= 10:
             pitch_var = np.var(self.pitch_history)
-            if pitch_var > 15: # High variance = movement
-                raw_score = max(raw_score, 0.85) # Force High Score
-                behaviors.append("Nodding")
+            if pitch_var > 15:  # Threshold for nodding intensity
+                # Force the category to nodding and score to high
+                current_category = "nodding"
+                raw_score = max(raw_score, 0.85) 
+                if "Nodding" not in behaviors:
+                    behaviors.append("Nodding")
 
-        # --- 2. Heuristic Fallback (Secondary Method) ---
-        else:
-            # Simple rule-based scoring if model is missing
-            raw_score = 0.8 # Start high
-
-            # Penalize for looking away
-            if abs(features.get('yaw', 0)) > 30:
-                raw_score += self.heuristic_weights['looking_away']
-                behaviors.append("Looking Away")
-                
-            # Penalize for looking down (phone)
-            if features.get('pitch', 0) < -20 or features.get('gaze_v', 0.0) > 0.1:
-                raw_score += self.heuristic_weights['phone_use']
-                if features.get('gaze_v', 0.0) > 0.1 and features.get('pitch', 0) < -10:
-                    behaviors.append("Looking at Watch/Phone")
-                elif features.get('pitch', 0) < -20:
-                    behaviors.append("Head Down")
-
-            raw_score = max(0.0, min(1.0, raw_score))
-
-        # --- 3. Specific Behavior Detection (For User Feedback) ---
-        # Even if the ML gives the score, we want to tell the user WHY.
-        
-        # Check Yaw (Looking away)
-        if abs(features.get('yaw', 0)) > 30:
-            direction = "Left" if features.get('yaw', 0) > 0 else "Right"
-            behaviors.append(f"Looking {direction}")
-
-        # Check Pitch (Looking down/Phone)
-        if features.get('pitch', 0) < -25:
-            behaviors.append("Looking Down")
-        elif features.get('pitch', 0) > 25:
-            behaviors.append("Looking Up")
-
-        # Check Eyes (Sleeping)
-        if features.get('ear', 0) < 0.15:
-            behaviors.append("Eyes Closed")
-
-        # Check Mouth (Yawning)
-        if features.get('mar', 0) > 0.5:
-            behaviors.append("Yawning")
-            raw_score -= 0.4
-        
         # --- 4. Smoothing ---
         # Use Exponential Moving Average to prevent jitter
         if self.score_history:
@@ -139,5 +122,5 @@ class EngagementScorer:
         else:
             status = "Not Engaged"
 
-        return smoothed_score, status, behaviors
+        return smoothed_score, status, current_category
 

@@ -15,6 +15,10 @@ def main():
     scorer = EngagementScorer()
 
     cap = cv2.VideoCapture(0)
+
+    window_name = 'Engagement Detection Demo v0'
+    cv2.namedWindow(window_name, cv2.WND_PROP_FULLSCREEN)
+    cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
     
     print("Starting Engagement System. Press 'q' to exit.")
 
@@ -138,10 +142,15 @@ def main():
 
                             y_offset += 65   # more vertical spacing
 
+                    
                     # Combine Image and Panel
                     image = cv2.hconcat([image, panel])
+                    
+            screen_w = 1920   # adjust if needed
+            screen_h = 1080
 
-            cv2.imshow('Engagement Detection Demo v0', image)
+            image = cv2.resize(image, (screen_w, screen_h))
+            cv2.imshow(window_name, image)
             
             if cv2.waitKey(5) & 0xFF == ord('q'):
                 break

@@ -78,17 +78,17 @@ class EngagementScorer:
         is_phone = pitch > 15.0 
         
         is_nodding = False
-        if len(self.pitch_history) >= 15:
-            pitch_data = np.array(self.pitch_history)
-            pitch_std = np.std(pitch_data)
-            centered = pitch_data - np.mean(pitch_data)
-            signs = np.sign(centered)
-            zero_crossings = np.where(np.diff(signs))[0]
-            num_crossings = len(zero_crossings)
+        # if len(self.pitch_history) >= 15:
+        #     pitch_data = np.array(self.pitch_history)
+        #     pitch_std = np.std(pitch_data)
+        #     centered = pitch_data - np.mean(pitch_data)
+        #     signs = np.sign(centered)
+        #     zero_crossings = np.where(np.diff(signs))[0]
+        #     num_crossings = len(zero_crossings)
 
-            # Desensitized Nodding: Higher threshold (3.5) to avoid sudden movements
-            if pitch_std > 3.5 and num_crossings >= 2:
-                is_nodding = True
+        #     # Desensitized Nodding: Higher threshold (3.5) to avoid sudden movements
+        #     if pitch_std > 3.5 and num_crossings >= 2:
+        #         is_nodding = True
 
         # --- Decision Logic ---
         override_category = None
@@ -102,9 +102,9 @@ class EngagementScorer:
         elif is_hand_raised:
             override_category = "raisehand"
             if "Hand Raised" not in behaviors: behaviors.append("Hand Raised")
-        elif is_nodding:
-            override_category = "nodding"
-            if "Nodding" not in behaviors: behaviors.append("Nodding")
+        # elif is_nodding:
+        #     override_category = "nodding"
+        #     if "Nodding" not in behaviors: behaviors.append("Nodding")
 
         # --- 2. ML Model Inference ---
         if self.model:
@@ -182,10 +182,10 @@ class EngagementScorer:
                         
                     prob_dict[override_category] = 1.0
                     
-                    if override_category == "nodding":
-                        status = "Engaged"
-                        raw_score = 1.0
-                    elif override_category == "drinking":
+                    # if override_category == "nodding":
+                    #     status = "Engaged"
+                    #     raw_score = 1.0
+                    if override_category == "drinking":
                         status = "Not Engaged"
                         raw_score = 0.0
                     elif override_category == "phone":
@@ -211,7 +211,8 @@ class EngagementScorer:
                     else:
                         raw_score = 0.5 - (0.5 * confidence)
                         
-                    prob_dict["nodding"] = 0.0 
+                    prob_dict["nodding"] = 0.0
+                    prob_dict.pop("nodding", None)
 
             except Exception as e:
                 print(f"Prediction Error: {e}")
